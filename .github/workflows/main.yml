@@ -1,0 +1,509 @@
+name: Build APK
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+      - name: Tulis project
+        run: |
+          mkdir -p app/src/main/java/com/futur/launcher app/src/main/res/values
+          cat > settings.gradle.kts <<'EOF_0'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "FuturLauncher"
+          include(":app")
+          EOF_0
+          cat > build.gradle.kts <<'EOF_1'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.20" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+          }
+          EOF_1
+          cat > gradle.properties <<'EOF_2'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF_2
+          cat > app/build.gradle.kts <<'EOF_3'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+          android {
+              namespace = "com.futur.launcher"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.futur.launcher"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+              buildFeatures { compose = true }
+          }
+          dependencies {
+              implementation(platform("androidx.compose:compose-bom:2024.09.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.foundation:foundation")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.activity:activity-compose:1.9.2")
+              implementation("androidx.core:core-ktx:1.13.1")
+          }
+          EOF_3
+          cat > app/src/main/AndroidManifest.xml <<'EOF_4'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.MAIN" />
+                      <category android:name="android.intent.category.LAUNCHER" />
+                  </intent>
+              </queries>
+              <application
+                  android:label="Futur Launcher"
+                  android:theme="@style/Theme.Futur">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTask"
+                      android:stateNotNeeded="true"
+                      android:excludeFromRecents="true"
+                      android:resizeableActivity="false"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.HOME" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF_4
+          cat > app/src/main/res/values/themes.xml <<'EOF_5'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.Futur" parent="android:Theme.DeviceDefault.NoActionBar">
+                  <item name="android:windowBackground">@android:color/black</item>
+              </style>
+          </resources>
+          EOF_5
+          cat > app/src/main/java/com/futur/launcher/MainActivity.kt <<'EOF_6'
+          package com.futur.launcher
+
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.os.BatteryManager
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.BackHandler
+          import androidx.activity.compose.setContent
+          import androidx.activity.enableEdgeToEdge
+          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.slideInVertically
+          import androidx.compose.animation.slideOutVertically
+          import androidx.compose.animation.core.LinearEasing
+          import androidx.compose.animation.core.RepeatMode
+          import androidx.compose.animation.core.animateFloat
+          import androidx.compose.animation.core.infiniteRepeatable
+          import androidx.compose.animation.core.rememberInfiniteTransition
+          import androidx.compose.animation.core.tween
+          import androidx.compose.foundation.Canvas
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.gestures.detectVerticalDragGestures
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.fillMaxHeight
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.navigationBarsPadding
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.statusBarsPadding
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.lazy.grid.GridCells
+          import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+          import androidx.compose.foundation.lazy.grid.items
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.text.BasicTextField
+          import androidx.compose.material3.Text
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.LaunchedEffect
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableFloatStateOf
+          import androidx.compose.runtime.mutableIntStateOf
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.geometry.Offset
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.ImageBitmap
+          import androidx.compose.ui.graphics.PathEffect
+          import androidx.compose.ui.graphics.SolidColor
+          import androidx.compose.ui.graphics.StrokeCap
+          import androidx.compose.ui.graphics.asImageBitmap
+          import androidx.compose.ui.graphics.drawscope.Stroke
+          import androidx.compose.ui.graphics.drawscope.inset
+          import androidx.compose.ui.graphics.drawscope.rotate
+          import androidx.compose.ui.input.pointer.pointerInput
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.TextStyle
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.core.graphics.drawable.toBitmap
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.withContext
+          import java.time.LocalDateTime
+          import java.time.format.DateTimeFormatter
+          import java.util.Locale
+
+          data class AppItem(val label: String, val icon: ImageBitmap, val intent: Intent)
+
+          private val Ink = Color(0xFFEAF6FF)
+          private val Dim = Color(0xFF8FA6C4)
+          private val palettes = listOf(
+              Color(0xFF6DF3FF) to Color(0xFF9B7BFF),
+              Color(0xFFFF7AD9) to Color(0xFFFFB86B),
+              Color(0xFF8DFF9E) to Color(0xFF4DD2FF),
+          )
+
+          class MainActivity : ComponentActivity() {
+              private var tick by mutableIntStateOf(0)
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  enableEdgeToEdge()
+                  setContent { LauncherApp(tick) }
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  tick++
+              }
+          }
+
+          fun loadApps(c: Context): List<AppItem> {
+              val pm = c.packageManager
+              val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+              return pm.queryIntentActivities(query, 0)
+                  .filter { it.activityInfo.packageName != c.packageName }
+                  .map { r ->
+                      val ai = r.activityInfo
+                      AppItem(
+                          r.loadLabel(pm).toString(),
+                          r.loadIcon(pm).toBitmap(112, 112).asImageBitmap(),
+                          Intent(Intent.ACTION_MAIN)
+                              .addCategory(Intent.CATEGORY_LAUNCHER)
+                              .setClassName(ai.packageName, ai.name)
+                              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED),
+                      )
+                  }
+                  .sortedBy { it.label.lowercase() }
+          }
+
+          fun Modifier.glass(radius: Int = 22): Modifier {
+              val shape = RoundedCornerShape(radius.dp)
+              return this
+                  .clip(shape)
+                  .background(Color.White.copy(alpha = 0.07f))
+                  .border(1.dp, Color.White.copy(alpha = 0.16f), shape)
+          }
+
+          @Composable
+          fun LauncherApp(tick: Int) {
+              val ctx = LocalContext.current
+              var apps by remember { mutableStateOf(listOf<AppItem>()) }
+              LaunchedEffect(tick) { apps = withContext(Dispatchers.Default) { loadApps(ctx) } }
+              var accent by remember { mutableIntStateOf(0) }
+              var drawer by remember { mutableStateOf(false) }
+              val (a1, a2) = palettes[accent]
+              BackHandler(enabled = drawer) { drawer = false }
+
+              Box(
+                  Modifier
+                      .fillMaxSize()
+                      .background(Brush.verticalGradient(listOf(Color(0xFF16224A), Color(0xFF070B14)))),
+              ) {
+                  Home(apps, a1, a2, onOpenDrawer = { drawer = true }, onAccent = { accent = it })
+                  AnimatedVisibility(
+                      visible = drawer,
+                      enter = slideInVertically { it },
+                      exit = slideOutVertically { it },
+                  ) {
+                      Drawer(apps, a1, onClose = { drawer = false })
+                  }
+              }
+          }
+
+          @Composable
+          fun Home(
+              apps: List<AppItem>,
+              a1: Color,
+              a2: Color,
+              onOpenDrawer: () -> Unit,
+              onAccent: (Int) -> Unit,
+          ) {
+              val ctx = LocalContext.current
+              var now by remember { mutableStateOf(LocalDateTime.now()) }
+              var battery by remember { mutableFloatStateOf(1f) }
+              LaunchedEffect(Unit) {
+                  while (true) {
+                      now = LocalDateTime.now()
+                      val b = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                      if (b != null) {
+                          val l = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                          val s = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+                          if (l >= 0) battery = l / s.toFloat()
+                      }
+                      delay(15_000)
+                  }
+              }
+              var drag by remember { mutableFloatStateOf(0f) }
+              val time = now.format(DateTimeFormatter.ofPattern("HH:mm"))
+              val date = now.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale("id", "ID")))
+
+              Column(
+                  Modifier
+                      .fillMaxSize()
+                      .statusBarsPadding()
+                      .navigationBarsPadding()
+                      .padding(18.dp)
+                      .pointerInput(Unit) {
+                          detectVerticalDragGestures(
+                              onDragStart = { drag = 0f },
+                              onDragEnd = { if (drag < -120f) onOpenDrawer() },
+                          ) { _, d -> drag += d }
+                      },
+                  horizontalAlignment = Alignment.CenterHorizontally,
+              ) {
+                  ClockRing(time, date, battery, a1, a2)
+                  Spacer(Modifier.height(8.dp))
+                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                      InfoCard(Modifier.weight(1f), "Aplikasi", "${apps.size}", "terpasang", null, a1, a2)
+                      InfoCard(Modifier.weight(1f), "Baterai", "${(battery * 100).toInt()}%", "saat ini", battery, a1, a2)
+                  }
+                  Spacer(Modifier.weight(1f))
+                  apps.drop(4).take(8).chunked(4).forEach { row ->
+                      Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceAround) {
+                          row.forEach { AppIcon(it, a1, Modifier.width(74.dp)) }
+                      }
+                  }
+                  Box(
+                      Modifier.height(32.dp).width(80.dp).clickable { onOpenDrawer() },
+                      contentAlignment = Alignment.Center,
+                  ) {
+                      Box(Modifier.width(44.dp).height(5.dp).clip(RoundedCornerShape(5.dp)).background(Dim))
+                  }
+                  Row(
+                      Modifier.fillMaxWidth().glass(28).padding(10.dp),
+                      horizontalArrangement = Arrangement.SpaceAround,
+                  ) {
+                      apps.take(4).forEach { AppIcon(it, a1, showLabel = false) }
+                  }
+                  Row(Modifier.padding(top = 8.dp)) {
+                      palettes.forEachIndexed { i, p ->
+                          Box(
+                              Modifier
+                                  .padding(6.dp)
+                                  .size(22.dp)
+                                  .clip(CircleShape)
+                                  .background(Brush.linearGradient(listOf(p.first, p.second)))
+                                  .clickable { onAccent(i) },
+                          )
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun ClockRing(time: String, date: String, battery: Float, a1: Color, a2: Color) {
+              val rot by rememberInfiniteTransition(label = "orbit").animateFloat(
+                  initialValue = 0f,
+                  targetValue = 360f,
+                  animationSpec = infiniteRepeatable(tween(24_000, easing = LinearEasing), RepeatMode.Restart),
+                  label = "orbit",
+              )
+              Box(Modifier.size(230.dp), contentAlignment = Alignment.Center) {
+                  Canvas(Modifier.fillMaxSize()) {
+                      inset(4.dp.toPx()) {
+                          drawCircle(Color.White.copy(alpha = 0.16f), style = Stroke(1.dp.toPx()))
+                          drawArc(
+                              color = a1,
+                              startAngle = -90f,
+                              sweepAngle = 360f * battery,
+                              useCenter = false,
+                              style = Stroke(3.dp.toPx(), cap = StrokeCap.Round),
+                          )
+                      }
+                      rotate(rot) {
+                          inset(20.dp.toPx()) {
+                              drawCircle(
+                                  a2.copy(alpha = 0.8f),
+                                  style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 26f))),
+                              )
+                          }
+                          drawCircle(a2, 4.dp.toPx(), Offset(size.width / 2, 20.dp.toPx()))
+                      }
+                  }
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                      Text(time, color = Ink, fontSize = 56.sp, fontWeight = FontWeight.ExtraLight)
+                      Text(date, color = Dim, fontSize = 12.sp)
+                  }
+              }
+          }
+
+          @Composable
+          fun InfoCard(modifier: Modifier, title: String, big: String, sub: String, bar: Float?, a1: Color, a2: Color) {
+              Column(modifier.glass().padding(14.dp)) {
+                  Text(title, color = Dim, fontSize = 12.sp)
+                  Text(big, color = Ink, fontSize = 22.sp)
+                  Text(sub, color = Dim, fontSize = 12.sp)
+                  if (bar != null) {
+                      Box(
+                          Modifier
+                              .padding(top = 8.dp)
+                              .fillMaxWidth()
+                              .height(4.dp)
+                              .clip(RoundedCornerShape(4.dp))
+                              .background(Color.White.copy(alpha = 0.16f)),
+                      ) {
+                          Box(
+                              Modifier
+                                  .fillMaxHeight()
+                                  .fillMaxWidth(bar.coerceIn(0.02f, 1f))
+                                  .background(Brush.horizontalGradient(listOf(a1, a2))),
+                          )
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun AppIcon(app: AppItem, glow: Color, modifier: Modifier = Modifier, showLabel: Boolean = true) {
+              val ctx = LocalContext.current
+              Column(
+                  modifier
+                      .clip(RoundedCornerShape(16.dp))
+                      .clickable { try { ctx.startActivity(app.intent) } catch (_: Exception) {} }
+                      .padding(4.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+              ) {
+                  Image(
+                      bitmap = app.icon,
+                      contentDescription = app.label,
+                      modifier = Modifier
+                          .size(54.dp)
+                          .border(1.dp, glow.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                          .clip(RoundedCornerShape(16.dp)),
+                  )
+                  if (showLabel) {
+                      Text(
+                          app.label,
+                          color = Dim,
+                          fontSize = 11.sp,
+                          maxLines = 1,
+                          overflow = TextOverflow.Ellipsis,
+                          textAlign = TextAlign.Center,
+                          modifier = Modifier.padding(top = 4.dp),
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          fun Drawer(apps: List<AppItem>, a1: Color, onClose: () -> Unit) {
+              var q by remember { mutableStateOf("") }
+              val shown = remember(q, apps) { apps.filter { it.label.contains(q, ignoreCase = true) } }
+              Column(
+                  Modifier
+                      .fillMaxSize()
+                      .background(Color(0xFF070B14).copy(alpha = 0.96f))
+                      .statusBarsPadding()
+                      .navigationBarsPadding()
+                      .padding(18.dp),
+              ) {
+                  Row(
+                      Modifier.fillMaxWidth().height(48.dp).glass(24).padding(horizontal = 16.dp),
+                      verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                      Box(Modifier.weight(1f)) {
+                          BasicTextField(
+                              value = q,
+                              onValueChange = { q = it },
+                              singleLine = true,
+                              textStyle = TextStyle(color = Ink, fontSize = 15.sp),
+                              cursorBrush = SolidColor(a1),
+                              decorationBox = { inner ->
+                                  if (q.isEmpty()) Text("Cari aplikasi", color = Dim, fontSize = 15.sp)
+                                  inner()
+                              },
+                          )
+                      }
+                      Text("Tutup", color = a1, modifier = Modifier.clickable { onClose() }.padding(8.dp))
+                  }
+                  if (shown.isEmpty()) {
+                      Text(
+                          "Tidak ada aplikasi bernama \u201C$q\u201D. Coba kata lain.",
+                          color = Dim,
+                          fontSize = 13.sp,
+                          modifier = Modifier.padding(top = 30.dp).fillMaxWidth(),
+                          textAlign = TextAlign.Center,
+                      )
+                  }
+                  LazyVerticalGrid(GridCells.Fixed(4), Modifier.padding(top = 16.dp)) {
+                      items(shown) { AppIcon(it, a1) }
+                  }
+              }
+          }
+          EOF_6
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FuturLauncher-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Futur Launcher v${{ github.run_number }}
+          files: app/build/outputs/apk/debug/app-debug.apk
